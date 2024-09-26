@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html style="height: 100%">
+<head>
+    <meta charset="utf-8">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="common.css" rel="stylesheet">
+</head>
+<body style="height: 100%; margin: 0">
+<div id="buttonContainer">
+</div>
+<div id="options">
+    <label for="dataSource">Data Source:</label>
+    <select id="dataSource">
+        <option value="2024" selected>Company Metadata 2024</option>
+        <option value="2023">Company Metadata 2023</option>
+    </select>
+    <label for="orderBy">Sort by:</label>
+    <select id="orderBy">
+    </select>
+    <label for="colorMapping">Color Mapping:</label>
+    <select id="colorMapping">
+    </select>
+    <label for="holding">Stock Holdings:</label>
+    <select id="holding">
+        <option value="all" selected>All Holdings</option>
+        <option value="current">Current Holdings</option>
+        <option value="sold">Sold Holdings</option>
+    </select>
+</div>
+<div id="visuals">
+    <label for="opacity">Opacity:</label>
+    <input type="range" id="opacity" min="0" max="1" value="0.35" step="0.01">
+    <span id="sliderValue"></span>
+    <label for="theme" id="themeLabel">Dark Mode</label>
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="theme" checked>
+    </div>
+</div>
+<div id="main" style="height: 100%"></div>
+<script>
+    var data, filteredData;
+    var allAxis;
+    var myChart = echarts.init(document.getElementById('main'));
+    var currentTheme = 'dark';
+    var displayCol, dateCol, gsheet_url, allCol;
+    const commonCol = [1, 2];
+    const disabledButtons = [2, 3, 7, 8, 10];
+
+    const gsheetid = "1BLUATC6DDbnfDTqoXzAXDSOh12Vc8Nw8aEUqjEJWWVU";
+    const sheet_name_new = "Company MetaData-2024";
+    const sheet_name_old = "Company MetaData-2023";
+    const gsheet_url_new = `https://docs.google.com/spreadsheets/d/${gsheetid}/gviz/tq?tqx=out:csv&sheet=${sheet_name_new}`;
+    const gsheet_url_old = `https://docs.google.com/spreadsheets/d/${gsheetid}/gviz/tq?tqx=out:csv&sheet=${sheet_name_old}`;
+
+    const newDisplayColumns = [5, 7, 8, 12, 14, 15, 17, 19, 20, 21, 24];
+    const newDateColumns = [3, 4, 10, 11];
+    const oldDisplayColumns = [5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 18];
+    const oldDateColumns = [3, 4, 8, 9];
+
+    function switchStylesheet(filename) {
+        var link = document.getElementById('stylesheet');
+        if (link) {
+            link.href = filename;
+        } else {
+            link = document.createElement('link');
+            link.id = 'stylesheet';
+            link.rel = 'stylesheet';
+            link.type = 'text/css';
+            link.href = filename;
+            document.head.appendChild(link);
+        }
+    }
+    switchStylesheet("dark.css");
+
+    function convertToTimestamp(dateStr) {
+        if (!dateStr) return null;
+        const [day, month, year] = dateStr.split('/');
+        const dateObj = new Date(`${year}-${month}-${day}`);
+        return dateObj.getTime();
+    }
+
+    function parseNumber(value) {
+        if (typeof value === 'string') {
+            return parseFloat(value.replace(/,/g, ''));
+        }
+        return parseFloat(value);
+    }
+
+    function parseData(url, displayColumns, dateColumns) {
+        return new Promise((resolve, reject) => {
+            Papa.parse(url, {
+                download: true,
+                header: true,
+                dynamicTyping: true,
+                complete: function(results) {
+                    const local_data = results.data.map(row => {
+                        var values = Object.values(row);
+                        dateColumns.forEach(index => {
+                            values[index] = convertToTimestamp(values[index]);
+                        });
+                        displayColumns.forEach(index => {
+                            values[index] = parseNumber(values[index]);
+                        });
+                        return values;
+                    });
+                    resolve(local_data);
+                },
+                error: reject
+            });
+        });
+    }
+
+    const schema = [
+        { text: 'Company Name' },
+        { text: 'Ticker Symbol' },
+        { text: 'Date of First Purchase' },
+        { text: 'Date of Last Purchase' },
+        { text: 'Total Number of Shares Purchased' },
+        { text: 'Total Purchase Amount' },
+        { text: 'Average Price per Share' },
+        { text: 'Date of First Sell' },
+        { text: 'Date of Last Sell' },
+        { text: 'Total Number of Shares Sold' },
+        { text: 'Total Sales Amount' },
+        { text: 'Average Sale Price per Share' },
+        { text: 'Net Total Number of Shares' },
+        { text: 'Current Share Price' },
+        { text: 'Total Dividends' },
+        { text: 'Realized Capital Gain & Loss' },
+        { text: 'Unrealized Capital Gain & Loss' }
+    ];
+
+    var lineStyle = {
+        width: 1,
+        opacity: 0.35
+    };
+
+    var orderedData, colorScale, backgroundColor, axisLineColor, axisLabelColor, axisTickColor,
+        nameTextColor, tooltipBackgroundColor, tooltipBorderColor, selectedAxis;
+
+    option = {
+        backgroundColor: backgroundColor,
+        legend: {
+            show: false,
+            data: ['Company MetaData']
+        },
+        tooltip: {
+            padding: 10,
+            backgroundColor: tooltipBackgroundColor,
+            borderColor: tooltipBorderColor,
+            borderWidth: 1
+        },
+        parallelAxis: [],
+        visualMap: {
+            show: true,
+            left: '95%',
+            bottom: 30,
+            min: 0,
+            max: 84,
+            dimension: 0,
+            inRange: {
+                color: colorScale
+            }
+        },
+        parallel: {
+            left: 220,
+            right: 150,
+            top: 80,
+            bottom: 30,
+            parallelAxisDefault: {
+                type: 'value',
+                min: 'dataMin',
+                max: 'dataMax',
+                nameLocation: 'end',
+                nameGap: 20,
+                nameTextStyle: {
+                    color: nameTextColor,
+                    fontSize: 10
+                },
+                nameRotate: 15,
+                nameTruncate: {
+                    maxWidth: 1000
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: axisLineColor
+                    }
+                },
+                axisTick: {
+                    lineStyle: {
+                        color: axisTickColor
+                    },
+                    alignWithLabel: true,
+                },
+                axisLabel: {
+                    color: axisLabelColor,
+                    showMinLabel: true,
+                    showMaxLabel: true,
+                }
+            }
+        },
+        series: [
+            {
+                name: 'Company MetaData',
+                type: 'parallel',
+                lineStyle: lineStyle,
+                data: []
+            }
+        ]
+    };
+
+    function updateOpacityOption() {
+        lineStyle.opacity = slider.value;
+        option.series.lineStyle = lineStyle;
+    }
+
+    function updateOrderOption() {
+        const selectedOrder = allCol[parseInt(orderBy.value)];
+
+        if(commonCol.includes(selectedOrder)){
+            orderedData = filteredData.slice().sort(function(a, b) {
+                if (a[selectedOrder] < b[selectedOrder]) {
+                    return -1;
+                }
+                if (a[selectedOrder] > b[selectedOrder]) {
+                    return 1;
+                }
+                return 0;
+            });
+        }else{
+            orderedData = filteredData.slice().sort(function(a, b) {
+                if (a[selectedOrder] > b[selectedOrder]) {
+                    return -1;
+                }
+                if (a[selectedOrder] < b[selectedOrder]) {
+                    return 1;
+                }
+                return 0;
+            });
+        }
+
+        if(selectedAxis !== undefined){
+            option.series[0].data = orderedData.map(row => selectedAxis.map(e => row[e.data]));
+        }
+    }
+
+    function updateColorMappingOption() {
+        if(selectedAxis.length === 0) return;
+        const dim = colorMapping.selectedIndex;
+        const selectedMapping = selectedAxis[dim].data;
+        var selectedMappingData;
+        if(commonCol.includes(selectedMapping)){
+            selectedMappingData = filteredData.map((row, index) => index);
+        }else{
+            selectedMappingData = filteredData.map(row => row[selectedMapping]);
+        }
+        const validData = selectedMappingData.filter(value => !isNaN(value) && value !== null);
+        const min = Math.min(...validData);
+        const max = Math.max(...validData);
+
+        option.visualMap.min = min;
+        option.visualMap.max = max;
+        option.visualMap.dimension = dim;
+    }
+
+    function filterHolding() {
+        let index = schema.findIndex(item => item.text === 'Net Total Number of Shares');
+        index = allCol[index];
+
+        if(holding.value === 'all') {
+            filteredData = data;
+        }else if(holding.value === 'sold'){
+            filteredData = data.filter(row => row[index] === 0);
+        }else{
+            filteredData = data.filter(row => row[index] !== 0);
+        }
+    }
+    function updateHoldingOption() {
+        filterHolding();
+        if(selectedAxis !== undefined){
+            updateColorMappingOption();
+        }
+        updateOrderOption();
+    }
+
+    function updateAxisOption () {
+        var buttons = document.getElementsByClassName('draggable-btn');
+
+        let count = 0;
+        selectedAxis = Array.from(buttons).map((button) => {
+            if(button.dataset.active === 'false') return null;
+            const matchedAxis = allAxis.find(e => e.axis.name === button.innerText);
+            if (matchedAxis) {
+                matchedAxis.axis.dim = count;
+                count++;
+                return matchedAxis;
+            }
+            return null;
+        }).filter(item => item !== null);
+
+        option.parallelAxis = selectedAxis.map(e => e.axis);
+
+        if(orderedData !== undefined){
+            option.series[0].data = orderedData.map(row => selectedAxis.map(e => row[e.data]));
+        }
+
+        var lastOption, init = false;
+        if(colorMapping.options.length !== 0){
+            lastOption = colorMapping.value;
+        } else init = true;
+
+        while (colorMapping.firstChild) {
+            colorMapping.removeChild(colorMapping.firstChild);
+        }
+        const remainingAxisText = selectedAxis.map(e => e.axis.name);
+        remainingAxisText.forEach(item => {
+            const option = document.createElement('option');
+            option.text = item;
+            option.value = item;
+            colorMapping.appendChild(option);
+        });
+        if(remainingAxisText.includes(lastOption)){
+            colorMapping.selectedIndex = remainingAxisText.indexOf(lastOption);
+        }else {colorMapping.selectedIndex = 0;}
+
+        if(init) colorMapping.selectedIndex = 11;
+
+        updateColorMappingOption();
+    }
+
+    function updateThemeOption() {
+        if (currentTheme === 'dark') {
+            backgroundColor = '#333';
+            axisLineColor = '#aaa';
+            axisLabelColor = '#fff';
+            axisTickColor = '#777';
+            nameTextColor = '#fff';
+            tooltipBackgroundColor = '#222';
+            tooltipBorderColor = '#777';
+            colorScale = [
+                '#F63538',
+                '#FF7F7F',
+                '#FFD4D4',
+                '#FFFFFF',
+                '#D4FFD4',
+                '#7FFF7F',
+                '#30CC5A',
+            ]
+        } else {
+            backgroundColor = '#fff';
+            axisLineColor = '#000';
+            axisLabelColor = '#000';
+            axisTickColor = '#000';
+            nameTextColor = '#000';
+            tooltipBackgroundColor = '#fff';
+            tooltipBorderColor = '#000';
+            colorScale = [
+                '#F63538',
+                '#BF4045',
+                '#8B444E',
+                '#414554',
+                '#35764E',
+                '#2F9E4F',
+                '#30CC5A',
+            ]
+        }
+        option.backgroundColor = backgroundColor;
+        option.tooltip.backgroundColor = tooltipBackgroundColor;
+        option.tooltip.borderColor = tooltipBorderColor;
+        option.parallel.parallelAxisDefault.nameTextStyle.color = nameTextColor;
+        option.parallel.parallelAxisDefault.axisLine.lineStyle.color = axisLineColor;
+        option.parallel.parallelAxisDefault.axisTick.lineStyle.color = axisTickColor;
+        option.parallel.parallelAxisDefault.axisLabel.color = axisLabelColor;
+        option.visualMap.inRange.color = colorScale;
+    }
+
+    function resetChart() { myChart.setOption(option, true); }
+
+    function updateAllOptions() {
+        updateOpacityOption();
+        updateThemeOption();
+        updateHoldingOption();
+        updateAxisOption();
+        resetChart();
+    }
+    //Setup buttons
+    const container = document.getElementById('buttonContainer');
+
+    schema.forEach((item, index) => {
+        const button = document.createElement('button');
+        button.className = 'draggable-btn';
+        button.innerText = item.text;
+
+        if(disabledButtons.includes(index)){
+            button.dataset.active = "false";
+        }else button.dataset.active = "true";
+        if (button.dataset.active === "true") {
+            button.style.backgroundColor = 'green';
+        } else {
+            button.style.backgroundColor = 'red';
+        }
+
+        button.addEventListener('click', function() {
+            if (this.dataset.active === "true") {
+                this.style.backgroundColor = 'red';
+                this.dataset.active = "false";
+            } else {
+                this.style.backgroundColor = 'green';
+                this.dataset.active = "true";
+            }
+            updateAxisOption();
+            resetChart();
+        });
+        container.appendChild(button);
+    });
+
+    new Sortable(container, {
+        animation: 150,
+        onEnd: function (evt) {
+            updateAxisOption();
+            resetChart();
+        }
+    });
+
+    //Setup order options
+    const orderBy = document.getElementById('orderBy');
+
+    schema.forEach((item, index) => {
+        const option = document.createElement('option');
+        option.text = item.text;
+        option.value = index.toString();
+        orderBy.appendChild(option);
+    });
+
+    orderBy.addEventListener('change', function() {
+        updateOrderOption();
+        resetChart();
+    });
+
+    //Setup color mapping options
+    const colorMapping = document.getElementById('colorMapping');
+
+    colorMapping.addEventListener('change', function() {
+        updateColorMappingOption();
+        resetChart();
+    });
+
+    //Setup holdings options
+    const holding = document.getElementById('holding');
+
+    holding.addEventListener('change', function() {
+        updateHoldingOption();
+        resetChart();
+    });
+
+    //Setup opacity slider
+    const slider = document.getElementById('opacity');
+    const opacityText = document.getElementById('sliderValue');
+    opacityText.textContent = slider.value;
+
+    slider.addEventListener('input', function() {
+        opacityText.textContent = this.value;
+    });
+
+    slider.addEventListener('change', function() {
+        updateOpacityOption();
+        resetChart();
+    });
+
+    //Setup data source options
+    const dataSource = document.getElementById('dataSource');
+    dataSource.addEventListener('change', function() {
+        processData();
+    });
+
+    //Setup theme switch
+    var themeSwitch = document.getElementById('theme');
+
+    themeSwitch.addEventListener('change', function() {
+        if (this.checked) {
+            switchStylesheet("dark.css");
+            currentTheme = "dark";
+        } else {
+            switchStylesheet("light.css");
+            currentTheme = "light";
+        }
+        updateThemeOption();
+        resetChart();
+    });
+
+    window.addEventListener('resize', function() {
+        myChart.resize();
+    });
+
+    //Handle data source changing events
+    async function processData() {
+        try {
+            if(dataSource.value === '2024'){
+                displayCol = newDisplayColumns;
+                dateCol = newDateColumns
+                gsheet_url = gsheet_url_new;
+            }else{
+                displayCol = oldDisplayColumns;
+                dateCol = oldDateColumns;
+                gsheet_url = gsheet_url_old;
+            }
+            allCol = commonCol.concat(displayCol, dateCol).sort((a, b) => a - b);
+            data = await parseData(gsheet_url, displayCol, dateCol);
+
+            const allDates = data.map(row => dateCol.map(index => row[index])).flat().filter(value => !isNaN(value) && value !== null);
+            const minDate = Math.min(...allDates);
+            const maxDate = Math.max(...allDates);
+
+            const columnRanges = displayCol.reduce((acc, col, index) => {
+                const values = data.map(row => row[col]).filter(value => !isNaN(value) && value !== null);
+                acc[index] = {
+                    min: Math.min(...values),
+                    max: Math.max(...values)
+                };
+                return acc;
+            }, {});
+
+            allAxis = [
+                {
+                    axis: {
+                        dim: 0,
+                        name: schema[0].text,
+                        inverse: true,
+                        nameLocation: 'start',
+                        type: 'category',
+                        axisLabel: {
+                            margin: -8,
+                            align: 'right',
+                            interval: 0,
+                            fontSize: 8,
+                        }
+                    },
+                    data: 1
+                },
+                {
+                    axis: {
+                        dim: 1,
+                        name: schema[1].text,
+                        inverse: true,
+                        nameLocation: 'start',
+                        type: 'category',
+                        axisLabel: {
+                            margin: -8,
+                            align: 'right',
+                            interval: 0,
+                            fontSize: 8,
+                        }
+                    },
+                    data: 2
+                },
+                {
+                    axis: {
+                        dim: 2,
+                        name: schema[2].text,
+                        type: 'time',
+                        min: minDate,
+                        max: maxDate,
+                        axisLabel: {
+                            formatter: '{yyyy}-{MM}-{dd}',
+                            fontSize: 10,
+                            showMinLabel: true,
+                            showMaxLabel: true
+                        }
+                    },
+                    data: 3
+                },
+                {
+                    axis: {
+                        dim: 3,
+                        name: schema[3].text,
+                        type: 'time',
+                        min: minDate,
+                        max: maxDate,
+                        axisLabel: {
+                            formatter: '{yyyy}-{MM}-{dd}',
+                            fontSize: 10,
+                            showMinLabel: true,
+                            showMaxLabel: true
+                        }
+                    },
+                    data: 4
+                },
+                {
+                    axis: {
+                        dim: 4,
+                        name: schema[4].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[0].min || value === columnRanges[0].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 5
+                },
+                {
+                    axis: {
+                        dim: 5,
+                        name: schema[5].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[1].min || value === columnRanges[1].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 7
+                },
+                {
+                    axis: {
+                        dim: 6,
+                        name: schema[6].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[2].min || value === columnRanges[2].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 8
+                },
+                {
+                    axis: {
+                        dim: 7,
+                        name: schema[7].text,
+                        type: 'time',
+                        min: minDate,
+                        max: maxDate,
+                        axisLabel: {
+                            formatter: '{yyyy}-{MM}-{dd}',
+                            fontSize: 10,
+                            showMinLabel: true,
+                            showMaxLabel: true
+                        }
+                    },
+                    data: 10
+                },
+                {
+                    axis: {
+                        dim: 8,
+                        name: schema[8].text,
+                        type: 'time',
+                        min: minDate,
+                        max: maxDate,
+                        axisLabel: {
+                            formatter: '{yyyy}-{MM}-{dd}',
+                            fontSize: 10,
+                            showMinLabel: true,
+                            showMaxLabel: true
+                        }
+                    },
+                    data: 11
+                },
+                {
+                    axis: {
+                        dim: 9,
+                        name: schema[9].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[3].min || value === columnRanges[3].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 12
+                },
+                {
+                    axis: {
+                        dim: 10,
+                        name: schema[10].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[4].min || value === columnRanges[4].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 14
+                },
+                {
+                    axis: {
+                        dim: 11,
+                        name: schema[11].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[5].min || value === columnRanges[5].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 15
+                },
+                {
+                    axis: {
+                        dim: 12,
+                        name: schema[12].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[6].min || value === columnRanges[6].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 17
+                },
+                {
+                    axis: {
+                        dim: 13,
+                        name: schema[13].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[7].min || value === columnRanges[7].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 19
+                },
+                {
+                    axis: {
+                        dim: 14,
+                        name: schema[14].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[8].min || value === columnRanges[8].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 20
+                },
+                {
+                    axis: {
+                        dim: 15,
+                        name: schema[15].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[9].min || value === columnRanges[9].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 21
+                },
+                {
+                    axis: {
+                        dim: 16,
+                        name: schema[16].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[10].min || value === columnRanges[10].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 24
+                },
+            ]
+            for (let i = 0; i < allAxis.length && i < allCol.length; i++) {
+                allAxis[i].data = allCol[i];
+            }
+
+            updateAllOptions();
+
+        } catch (error) {
+            console.error('error:', error);
+        }
+    }
+    processData();
+</script>
+</body>
+</html>

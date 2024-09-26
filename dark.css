@@ -1,0 +1,18 @@
+#buttonContainer {
+    background-color: #333;
+}
+#options {
+    background-color: #333;
+    label {
+        color: white;
+    }
+}
+#visuals {
+    background-color: #333;
+    label {
+        color: white;
+    }
+    span {
+        color: white;
+    }
+}
