@@ -48,7 +48,7 @@
     var currentTheme = 'dark';
     var displayCol, dateCol, gsheet_url, allCol;
     const commonCol = [1, 2];
-    const disabledButtons = [2, 3, 7, 8, 10];
+    const disabledButtons = [14];
 
     const gsheetid = "1BLUATC6DDbnfDTqoXzAXDSOh12Vc8Nw8aEUqjEJWWVU";
     const sheet_name_new = "Company MetaData-2024";
@@ -56,8 +56,10 @@
     const gsheet_url_new = `https://docs.google.com/spreadsheets/d/${gsheetid}/gviz/tq?tqx=out:csv&sheet=${sheet_name_new}`;
     const gsheet_url_old = `https://docs.google.com/spreadsheets/d/${gsheetid}/gviz/tq?tqx=out:csv&sheet=${sheet_name_old}`;
 
-    const newDisplayColumns = [5, 7, 8, 12, 14, 15, 17, 19, 20, 21, 24];
-    const newDateColumns = [3, 4, 10, 11];
+    const newDisplayColumns = [3, 6, 8, 11, 14, 16, 19, 22, 26, 28, 33];
+    const newDateColumns = [];
+    const unsplitColumns = [3, 8, 11, 16, 19, 28, 33];
+    const splitColumns = [4, 10, 12, 18, 20, 30, 35];
     const oldDisplayColumns = [5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 18];
     const oldDateColumns = [3, 4, 8, 9];
 
@@ -105,6 +107,13 @@
                         displayColumns.forEach(index => {
                             values[index] = parseNumber(values[index]);
                         });
+                        //Split Handle
+                        unsplitColumns.forEach((colIndex, i) => {
+                            const replacementIndex = splitColumns[i];
+                            if (values[replacementIndex] !== null && values[replacementIndex] !== undefined && values[replacementIndex] !== "") {
+                                values[colIndex] = values[replacementIndex];
+                            }
+                        });
                         return values;
                     });
                     resolve(local_data);
@@ -117,13 +126,9 @@
     const schema = [
         { text: 'Company Name' },
         { text: 'Ticker Symbol' },
-        { text: 'Date of First Purchase' },
-        { text: 'Date of Last Purchase' },
         { text: 'Total Number of Shares Purchased' },
         { text: 'Total Purchase Amount' },
         { text: 'Average Price per Share' },
-        { text: 'Date of First Sell' },
-        { text: 'Date of Last Sell' },
         { text: 'Total Number of Shares Sold' },
         { text: 'Total Sales Amount' },
         { text: 'Average Sale Price per Share' },
@@ -133,6 +138,7 @@
         { text: 'Realized Capital Gain & Loss' },
         { text: 'Unrealized Capital Gain & Loss' }
     ];
+
 
     var lineStyle = {
         width: 1,
@@ -327,7 +333,7 @@
             colorMapping.selectedIndex = remainingAxisText.indexOf(lastOption);
         }else {colorMapping.selectedIndex = 0;}
 
-        if(init) colorMapping.selectedIndex = 11;
+        if(init) colorMapping.selectedIndex = 7;
 
         updateColorMappingOption();
     }
@@ -561,14 +567,13 @@
                     axis: {
                         dim: 2,
                         name: schema[2].text,
-                        type: 'time',
-                        min: minDate,
-                        max: maxDate,
                         axisLabel: {
-                            formatter: '{yyyy}-{MM}-{dd}',
-                            fontSize: 10,
-                            showMinLabel: true,
-                            showMaxLabel: true
+                            formatter: function (value) {
+                                if(value === columnRanges[0].min || value === columnRanges[0].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
                         }
                     },
                     data: 3
@@ -577,14 +582,13 @@
                     axis: {
                         dim: 3,
                         name: schema[3].text,
-                        type: 'time',
-                        min: minDate,
-                        max: maxDate,
                         axisLabel: {
-                            formatter: '{yyyy}-{MM}-{dd}',
-                            fontSize: 10,
-                            showMinLabel: true,
-                            showMaxLabel: true
+                            formatter: function (value) {
+                                if(value === columnRanges[1].min || value === columnRanges[1].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
                         }
                     },
                     data: 4
@@ -595,7 +599,7 @@
                         name: schema[4].text,
                         axisLabel: {
                             formatter: function (value) {
-                                if(value === columnRanges[0].min || value === columnRanges[0].max){
+                                if(value === columnRanges[2].min || value === columnRanges[2].max){
                                     return value.toFixed(1);
                                 }
                                 return value;
@@ -610,7 +614,22 @@
                         name: schema[5].text,
                         axisLabel: {
                             formatter: function (value) {
-                                if(value === columnRanges[1].min || value === columnRanges[1].max){
+                                if(value === columnRanges[3].min || value === columnRanges[3].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 6
+                },
+                {
+                    axis: {
+                        dim: 6,
+                        name: schema[6].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[4].min || value === columnRanges[4].max){
                                     return value.toFixed(1);
                                 }
                                 return value;
@@ -621,11 +640,11 @@
                 },
                 {
                     axis: {
-                        dim: 6,
-                        name: schema[6].text,
+                        dim: 7,
+                        name: schema[7].text,
                         axisLabel: {
                             formatter: function (value) {
-                                if(value === columnRanges[2].min || value === columnRanges[2].max){
+                                if(value === columnRanges[5].min || value === columnRanges[5].max){
                                     return value.toFixed(1);
                                 }
                                 return value;
@@ -636,35 +655,18 @@
                 },
                 {
                     axis: {
-                        dim: 7,
-                        name: schema[7].text,
-                        type: 'time',
-                        min: minDate,
-                        max: maxDate,
-                        axisLabel: {
-                            formatter: '{yyyy}-{MM}-{dd}',
-                            fontSize: 10,
-                            showMinLabel: true,
-                            showMaxLabel: true
-                        }
-                    },
-                    data: 10
-                },
-                {
-                    axis: {
                         dim: 8,
                         name: schema[8].text,
-                        type: 'time',
-                        min: minDate,
-                        max: maxDate,
                         axisLabel: {
-                            formatter: '{yyyy}-{MM}-{dd}',
-                            fontSize: 10,
-                            showMinLabel: true,
-                            showMaxLabel: true
+                            formatter: function (value) {
+                                if(value === columnRanges[6].min || value === columnRanges[6].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
                         }
                     },
-                    data: 11
+                    data: 9
                 },
                 {
                     axis: {
@@ -672,7 +674,37 @@
                         name: schema[9].text,
                         axisLabel: {
                             formatter: function (value) {
-                                if(value === columnRanges[3].min || value === columnRanges[3].max){
+                                if(value === columnRanges[7].min || value === columnRanges[7].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 10
+                },
+                {
+                    axis: {
+                        dim: 10,
+                        name: schema[10].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[8].min || value === columnRanges[8].max){
+                                    return value.toFixed(1);
+                                }
+                                return value;
+                            }
+                        }
+                    },
+                    data: 11
+                },
+                {
+                    axis: {
+                        dim: 11,
+                        name: schema[11].text,
+                        axisLabel: {
+                            formatter: function (value) {
+                                if(value === columnRanges[9].min || value === columnRanges[9].max){
                                     return value.toFixed(1);
                                 }
                                 return value;
@@ -683,98 +715,8 @@
                 },
                 {
                     axis: {
-                        dim: 10,
-                        name: schema[10].text,
-                        axisLabel: {
-                            formatter: function (value) {
-                                if(value === columnRanges[4].min || value === columnRanges[4].max){
-                                    return value.toFixed(1);
-                                }
-                                return value;
-                            }
-                        }
-                    },
-                    data: 14
-                },
-                {
-                    axis: {
-                        dim: 11,
-                        name: schema[11].text,
-                        axisLabel: {
-                            formatter: function (value) {
-                                if(value === columnRanges[5].min || value === columnRanges[5].max){
-                                    return value.toFixed(1);
-                                }
-                                return value;
-                            }
-                        }
-                    },
-                    data: 15
-                },
-                {
-                    axis: {
                         dim: 12,
                         name: schema[12].text,
-                        axisLabel: {
-                            formatter: function (value) {
-                                if(value === columnRanges[6].min || value === columnRanges[6].max){
-                                    return value.toFixed(1);
-                                }
-                                return value;
-                            }
-                        }
-                    },
-                    data: 17
-                },
-                {
-                    axis: {
-                        dim: 13,
-                        name: schema[13].text,
-                        axisLabel: {
-                            formatter: function (value) {
-                                if(value === columnRanges[7].min || value === columnRanges[7].max){
-                                    return value.toFixed(1);
-                                }
-                                return value;
-                            }
-                        }
-                    },
-                    data: 19
-                },
-                {
-                    axis: {
-                        dim: 14,
-                        name: schema[14].text,
-                        axisLabel: {
-                            formatter: function (value) {
-                                if(value === columnRanges[8].min || value === columnRanges[8].max){
-                                    return value.toFixed(1);
-                                }
-                                return value;
-                            }
-                        }
-                    },
-                    data: 20
-                },
-                {
-                    axis: {
-                        dim: 15,
-                        name: schema[15].text,
-                        axisLabel: {
-                            formatter: function (value) {
-                                if(value === columnRanges[9].min || value === columnRanges[9].max){
-                                    return value.toFixed(1);
-                                }
-                                return value;
-                            }
-                        }
-                    },
-                    data: 21
-                },
-                {
-                    axis: {
-                        dim: 16,
-                        name: schema[16].text,
                         axisLabel: {
                             formatter: function (value) {
                                 if(value === columnRanges[10].min || value === columnRanges[10].max){
@@ -784,7 +726,7 @@
                             }
                         }
                     },
-                    data: 24
+                    data: 13
                 },
             ]
             for (let i = 0; i < allAxis.length && i < allCol.length; i++) {
