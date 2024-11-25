@@ -85,6 +85,10 @@
         return dateObj.getTime();
     }
 
+    function convertToVerticalLabel(label){
+
+    }
+
     function parseNumber(value) {
         if (typeof value === 'string') {
             return parseFloat(value.replace(/,/g, ''));
@@ -168,10 +172,26 @@
             min: 0,
             max: 84,
             dimension: 0,
+            text: [84, 0],
+            textStyle: {
+                color: '#fff',
+            },
             inRange: {
                 color: colorScale
             }
         },
+        graphic: [
+            {
+                type: 'text',
+                left: '94%',
+                bottom: 240,
+                style: {
+                    text: "",
+                    font: 'bold 16px sans-serif',
+                    fill: '#fff'
+                },
+            }
+        ],
         parallel: {
             left: 220,
             right: 150,
@@ -268,9 +288,17 @@
         const min = Math.min(...validData);
         const max = Math.max(...validData);
 
-        option.visualMap.min = min;
-        option.visualMap.max = max;
+        if(min < 0){
+            const maxAbs = Math.max(Math.abs(min), Math.abs(max));
+            option.visualMap.min = -maxAbs;
+            option.visualMap.max = maxAbs;
+        }else{
+            option.visualMap.min = min;
+            option.visualMap.max = max;
+        }
+        option.visualMap.text = [max, min];
         option.visualMap.dimension = dim;
+        option.graphic[0].style.text = schema[dim].text.split(' ').join('\n')
     }
 
     function filterHolding() {
@@ -333,7 +361,7 @@
             colorMapping.selectedIndex = remainingAxisText.indexOf(lastOption);
         }else {colorMapping.selectedIndex = 0;}
 
-        if(init) colorMapping.selectedIndex = 7;
+        if(init) colorMapping.selectedIndex = 0;
 
         updateColorMappingOption();
     }
